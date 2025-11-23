@@ -51,14 +51,37 @@ class Decoder:
                 proto_class = getattr(netprotocols, proto)
             except AttributeError:
                 continue
-            end: int = start + proto_class.header_len
-            protocol = proto_class.decode(frame[start:end])
+
+            # Ensure there are enough bytes remaining for this protocol's
+            # header. If not, treat the rest of the frame as data and stop
+            # attempting to decode further protocols.
+            end = start + proto_class.header_len
+            if len(frame) < end:
+                # Not enough bytes for the expected header; store remaining
+                # bytes as payload and stop processing protocols.
+                self.data = frame[start:]
+                break
+
+            try:
+                protocol = proto_class.decode(frame[start:end])
+            except Exception:
+                # Any decode error (including upstream ValueError for small
+                # buffers) should be handled by treating the remainder as
+                # data rather than crashing.
+                self.data = frame[start:]
+                break
+
             setattr(self, proto.lower(), protocol)
             if protocol.encapsulated_proto in (None, "undefined"):
+                start = end
                 break
             self.protocol_queue.append(protocol.encapsulated_proto)
             start = end
-        self.data = frame[end:]
+
+        # If _data wasn't set in an early exit, set it to the bytes after
+        # the last-decoded header (or the whole frame if nothing decoded).
+        if self.data is None:
+            self.data = frame[end:]
 
     def execute(self) -> Iterator:
         with socket(PF_PACKET, SOCK_RAW, ntohs(0x0003)) as sock:

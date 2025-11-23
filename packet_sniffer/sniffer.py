@@ -3,6 +3,7 @@ import os
 
 from core import PacketSniffer
 from output import OutputToScreen
+from output import OutputToWeb
 
 
 parser = argparse.ArgumentParser(description="Network packet sniffer")
@@ -28,6 +29,13 @@ OutputToScreen(
     subject=(sniffer := PacketSniffer()),
     display_data=_args.data
 )
+
+# Also broadcast to any connected web UI clients. This import is optional
+# and will silently fail if websockets/server isn't available.
+try:
+    OutputToWeb(subject=sniffer, display_data=_args.data)
+except Exception:
+    pass
 
 try:
     for _ in sniffer.listen(_args.interface):

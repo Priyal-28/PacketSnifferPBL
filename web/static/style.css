@@ -1,0 +1,9 @@
+body { font-family: sans-serif; background:#111; color:#eee; margin:0; }
+#app { padding: 1rem; }
+#controls { margin-bottom: 0.5rem; }
+#filters label { margin-right: 0.75rem; font-size: 0.9rem; }
+#main { display: flex; gap: 1rem; }
+#log { flex: 1 1 60%; height: 70vh; overflow:auto; background:#000; padding:1rem; border-radius:6px; }
+#details { flex: 1 1 40%; height: 70vh; overflow:auto; background:#071; color:#001; padding:1rem; border-radius:6px; white-space: pre-wrap; }
+.line { font-family: monospace; white-space: pre; padding:2px 0; cursor: pointer; }
+.line:hover { background: rgba(255,255,255,0.02); }

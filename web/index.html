@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Packet Sniffer UI</title>
+    <link rel="stylesheet" href="/static/style.css">
+  </head>
+  <body>
+    <div id="app">
+      <h1>Packet Sniffer</h1>
+      <div id="controls">
+        <div id="filters">
+          <label><input type="checkbox" data-proto="Ethernet" checked> Ethernet</label>
+          <label><input type="checkbox" data-proto="IPv4" checked> IPv4</label>
+          <label><input type="checkbox" data-proto="IPv6" checked> IPv6</label>
+          <label><input type="checkbox" data-proto="ARP" checked> ARP</label>
+          <label><input type="checkbox" data-proto="TCP" checked> TCP</label>
+          <label><input type="checkbox" data-proto="UDP" checked> UDP</label>
+          <label><input type="checkbox" data-proto="ICMPv4" checked> ICMPv4</label>
+          <label><input type="checkbox" data-proto="ICMPv6" checked> ICMPv6</label>
+        </div>
+        <div id="actions">
+          <input id="search" placeholder="search text or protocol" />
+          <button id="export">Export visible</button>
+        </div>
+      </div>
+      <div id="main">
+        <div id="log"></div>
+        <pre id="details"></pre>
+      </div>
+    </div>
+    <script src="/static/app.js"></script>
+  </body>
+</html>

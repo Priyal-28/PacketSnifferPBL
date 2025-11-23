@@ -5,6 +5,7 @@ __author__ = "EONRaider @ keybase.io/eonraider"
 
 import time
 from abc import ABC, abstractmethod
+from typing import Any
 
 
 class Output(ABC):
@@ -146,3 +147,153 @@ class OutputToScreen(Output):
             data = (self._frame.data.decode(errors="ignore").
                     replace("\n", f"\n{i * 2}"))
             print(f"{i}{data}")
+
+
+class OutputToWeb(Output):
+    """Adapter that broadcasts a JSON-serializable summary of the frame
+    to connected WebSocket clients using the websocket_server.broadcast()
+    function. This keeps the console output intact and simply provides a
+    machine-friendly view for the UI.
+    """
+    def __init__(self, subject, *, display_data: bool = False):
+        try:
+            # Import locally to avoid requiring the package unless used.
+            from .websocket_server import broadcast
+        except Exception:
+            broadcast = None  # type: ignore
+        self._broadcast = broadcast
+        self._display_data = display_data
+        super().__init__(subject)
+
+    def update(self, frame: Any) -> None:
+        if self._broadcast is None:
+            return
+        # Base payload
+        payload = {
+            'packet_num': getattr(frame, 'packet_num', None),
+            'protocol_queue': getattr(frame, 'protocol_queue', []),
+            'frame_length': getattr(frame, 'frame_length', None),
+            'epoch_time': getattr(frame, 'epoch_time', None),
+        }
+
+        # Helper to safely extract attributes
+        def _safe(obj, *attrs):
+            try:
+                for a in attrs:
+                    obj = getattr(obj, a)
+                return obj
+            except Exception:
+                return None
+
+        # Ethernet
+        if hasattr(frame, 'ethernet'):
+            payload['ethernet'] = {
+                'src': _safe(frame.ethernet, 'src'),
+                'dst': _safe(frame.ethernet, 'dst'),
+                'type': _safe(frame.ethernet, 'ptype_str') or _safe(frame.ethernet, 'ptype_hex_str')
+            }
+
+        # IPv4
+        if hasattr(frame, 'ipv4'):
+            ipv4 = frame.ipv4
+            payload['ipv4'] = {
+                'src': _safe(ipv4, 'src'),
+                'dst': _safe(ipv4, 'dst'),
+                'len': _safe(ipv4, 'len'),
+                'ttl': _safe(ipv4, 'ttl'),
+                'proto': _safe(ipv4, 'encapsulated_proto')
+            }
+
+        # IPv6
+        if hasattr(frame, 'ipv6'):
+            ipv6 = frame.ipv6
+            payload['ipv6'] = {
+                'src': _safe(ipv6, 'src'),
+                'dst': _safe(ipv6, 'dst'),
+                'payload_len': _safe(ipv6, 'payload_len'),
+                'next_header': _safe(ipv6, 'encapsulated_proto')
+            }
+
+        # ARP
+        if hasattr(frame, 'arp'):
+            arp = frame.arp
+            payload['arp'] = {
+                'spa': _safe(arp, 'spa'),
+                'tpa': _safe(arp, 'tpa'),
+                'sha': _safe(arp, 'sha'),
+                'tha': _safe(arp, 'tha'),
+                'oper': _safe(arp, 'oper')
+            }
+
+        # TCP
+        if hasattr(frame, 'tcp'):
+            tcp = frame.tcp
+            payload['tcp'] = {
+                'sport': _safe(tcp, 'sport'),
+                'dport': _safe(tcp, 'dport'),
+                'seq': _safe(tcp, 'seq'),
+                'ack': _safe(tcp, 'ack'),
+                'flags': _safe(tcp, 'flags_str')
+            }
+
+        # UDP
+        if hasattr(frame, 'udp'):
+            udp = frame.udp
+            payload['udp'] = {
+                'sport': _safe(udp, 'sport'),
+                'dport': _safe(udp, 'dport'),
+                'len': _safe(udp, 'len')
+            }
+
+        # ICMP
+        if hasattr(frame, 'icmpv4'):
+            icmp = frame.icmpv4
+            payload['icmpv4'] = {
+                'type': _safe(icmp, 'type'),
+                'code': _safe(icmp, 'code')
+            }
+        if hasattr(frame, 'icmpv6'):
+            icmp6 = frame.icmpv6
+            payload['icmpv6'] = {
+                'type': _safe(icmp6, 'type'),
+                'code': _safe(icmp6, 'code')
+            }
+        if self._display_data:
+            try:
+                payload['data'] = frame.data.decode(errors='ignore')
+            except Exception:
+                payload['data'] = None
+        # Non-blocking broadcast
+        try:
+            self._broadcast(payload)
+        except Exception:
+            pass
+
+
+class OutputToFile(Output):
+    """Append detailed JSON lines to a file for persistent logging."""
+    def __init__(self, subject, *, path: str = 'sniffer_log.jsonl', display_data: bool = False):
+        self.path = path
+        self._display_data = display_data
+        super().__init__(subject)
+
+    def update(self, frame: Any) -> None:
+        # Reuse OutputToWeb's payload creation logic by building a dict here
+        payload = {
+            'packet_num': getattr(frame, 'packet_num', None),
+            'protocol_queue': getattr(frame, 'protocol_queue', []),
+            'frame_length': getattr(frame, 'frame_length', None),
+            'epoch_time': getattr(frame, 'epoch_time', None),
+        }
+        try:
+            payload['data'] = frame.data.decode(errors='ignore') if self._display_data else None
+        except Exception:
+            payload['data'] = None
+
+        import json
+        try:
+            with open(self.path, 'a', encoding='utf8') as f:
+                f.write(json.dumps(payload, default=str) + '\n')
+        except Exception:
+            # Do not raise from update
+            pass
