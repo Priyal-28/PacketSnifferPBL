@@ -23,11 +23,18 @@
         <div id="actions">
           <input id="search" placeholder="search text or protocol" />
           <button id="export">Export visible</button>
+          <button id="simulate">Simulate</button>
         </div>
       </div>
       <div id="main">
-        <div id="log"></div>
-        <pre id="details"></pre>
+        <aside id="hosts">
+          <h3>Hosts</h3>
+          <ul id="host-list"></ul>
+        </aside>
+        <div id="content">
+          <div id="log"></div>
+          <pre id="details"></pre>
+        </div>
       </div>
     </div>
     <script src="/static/app.js"></script>

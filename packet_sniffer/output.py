@@ -258,6 +258,125 @@ class OutputToWeb(Output):
                 'type': _safe(icmp6, 'type'),
                 'code': _safe(icmp6, 'code')
             }
+
+        # Best-effort hostname extraction from payload (HTTP Host or TLS SNI)
+        host = None
+        try:
+            raw = frame.data if hasattr(frame, 'data') else None
+            if raw:
+                # Try HTTP Host header (plain text)
+                try:
+                    text = raw.decode('utf-8', errors='ignore')
+                    for line in text.split('\r\n'):
+                        if line.lower().startswith('host:'):
+                            host = line.split(':', 1)[1].strip()
+                            break
+                except Exception:
+                    host = None
+
+                # If not HTTP, try TLS ClientHello SNI
+                if host is None and isinstance(raw, (bytes, bytearray)) and len(raw) > 5:
+                    def _extract_sni(b: bytes):
+                        try:
+                            # TLS record header
+                            if b[0] != 0x16:
+                                return None
+                            # record length at bytes 3-4
+                            if len(b) < 5:
+                                return None
+                            rec_len = int.from_bytes(b[3:5], 'big')
+                            if len(b) < 5 + rec_len:
+                                # truncated; still try with available
+                                pass
+                            # handshake starts at 5
+                            i = 5
+                            # handshake type
+                            if i + 1 > len(b):
+                                return None
+                            hs_type = b[i]
+                            if hs_type != 0x01:
+                                return None
+                            # handshake length (3 bytes)
+                            if i + 4 > len(b):
+                                return None
+                            hs_len = int.from_bytes(b[i+1:i+4], 'big')
+                            i += 4
+                            # skip client version (2) + random (32)
+                            i += 2 + 32
+                            if i >= len(b):
+                                return None
+                            # session id
+                            sid_len = b[i]
+                            i += 1 + sid_len
+                            if i + 2 > len(b):
+                                return None
+                            # cipher suites
+                            cs_len = int.from_bytes(b[i:i+2], 'big')
+                            i += 2 + cs_len
+                            if i >= len(b):
+                                return None
+                            # compression methods
+                            comp_len = b[i]
+                            i += 1 + comp_len
+                            if i + 2 > len(b):
+                                return None
+                            # extensions length
+                            ext_len = int.from_bytes(b[i:i+2], 'big')
+                            i += 2
+                            end_ext = i + ext_len
+                            while i + 4 <= end_ext and i + 4 <= len(b):
+                                ext_type = int.from_bytes(b[i:i+2], 'big')
+                                ext_size = int.from_bytes(b[i+2:i+4], 'big')
+                                i += 4
+                                if ext_type == 0x0000:
+                                    # server_name extension
+                                    # first two bytes: list length
+                                    if i + 2 > len(b):
+                                        return None
+                                    list_len = int.from_bytes(b[i:i+2], 'big')
+                                    j = i + 2
+                                    end_list = j + list_len
+                                    while j + 3 <= end_list and j + 3 <= len(b):
+                                        name_type = b[j]
+                                        name_len = int.from_bytes(b[j+1:j+3], 'big')
+                                        j += 3
+                                        if j + name_len > len(b):
+                                            return None
+                                        if name_type == 0:
+                                            return b[j:j+name_len].decode('utf-8', errors='ignore')
+                                        j += name_len
+                                    return None
+                                else:
+                                    i += ext_size
+                            return None
+                        except Exception:
+                            return None
+
+                    sni = _extract_sni(bytes(raw))
+                    if sni:
+                        host = sni
+        except Exception:
+            host = None
+
+        # Fallback: reverse DNS on destination IP if available
+        if host is None:
+            try:
+                dst = None
+                if 'ipv4' in payload and payload['ipv4'].get('dst'):
+                    dst = payload['ipv4']['dst']
+                elif 'ipv6' in payload and payload['ipv6'].get('dst'):
+                    dst = payload['ipv6']['dst']
+                if dst:
+                    import socket as _socket
+                    try:
+                        host = _socket.gethostbyaddr(dst)[0]
+                    except Exception:
+                        host = None
+            except Exception:
+                host = None
+
+        if host:
+            payload['host'] = host
         if self._display_data:
             try:
                 payload['data'] = frame.data.decode(errors='ignore')
